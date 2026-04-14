@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Door Opener</title>
+
+  <!-- Microsoft Teams JS SDK -->
+  <script src="https://res.cdn.office.net/teams-js/2.22.0/js/MicrosoftTeams.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #0f2617;
+      --btn: #1a7a3c;
+      --btn-glow: #2ecc71;
+      --text: #fff;
+      --hint: rgba(163, 217, 165, 0.5);
+      --done: #a3d9a5;
+    }
+
+    /* Teams dark theme overrides */
+    body.teams-dark  { --bg: #1f1f1f; }
+    body.teams-light { --bg: #f3f2f1; --hint: rgba(50,120,60,0.6); }
+    body.teams-hc    { --bg: #000; --btn: #00ff00; --text: #000; }
+
+    * { margin: 0; padding: 0; box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent; user-select: none; }
+
+    html, body {
+      height: 100%; width: 100%; overflow: hidden;
+      background: var(--bg);
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      transition: background 0.3s;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+    }
+
+    /* ---- BUTTON ---- */
+    .btn-wrap { position: relative; }
+
+    .ring {
+      position: absolute; inset: -28px;
+      border-radius: 50%;
+      border: 2px solid rgba(46,204,113,0.18);
+      pointer-events: none;
+    }
+    .ring-2 { inset: -52px; border-color: rgba(46,204,113,0.08); }
+
+    @keyframes pulse {
+      0%   { transform: scale(1);    opacity: 0.7; }
+      100% { transform: scale(1.25); opacity: 0; }
+    }
+    .firing .ring   { animation: pulse 0.55s ease-out forwards; }
+    .firing .ring-2 { animation: pulse 0.55s 0.13s ease-out forwards; }
+
+    #doorBtn {
+      width: 200px; height: 200px;
+      border-radius: 50%; border: none;
+      background: radial-gradient(circle at 38% 32%, #3ae07a, #1a7a3c);
+      box-shadow:
+        0 0 0 5px rgba(46,204,113,0.15),
+        0 18px 50px rgba(0,0,0,0.45),
+        inset 0 2px 4px rgba(255,255,255,0.18);
+      cursor: pointer;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 10px;
+      transition: transform 0.12s, box-shadow 0.12s;
+      position: relative; z-index: 1;
+      outline: none;
+    }
+    #doorBtn:active {
+      transform: scale(0.93);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4), inset 0 2px 4px rgba(255,255,255,0.1);
+    }
+
+    .icon  { font-size: 64px; line-height: 1;
+             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.35)); }
+    .label { color: #fff; font-size: 15px; font-weight: 700;
+             letter-spacing: 0.09em; text-transform: uppercase;
+             text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+
+    /* ---- STATUS ---- */
+    #status {
+      min-height: 32px;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .status-pill {
+      font-size: 14px; font-weight: 500; padding: 5px 18px;
+      border-radius: 20px; opacity: 0;
+      transition: opacity 0.25s;
+    }
+    .status-pill.show { opacity: 1; }
+    .status-pill.sending { color: #2ecc71; background: rgba(46,204,113,0.12); }
+    .status-pill.done    { color: var(--done); background: rgba(163,217,165,0.1); }
+
+    /* ---- TONE BARS ---- */
+    .bars { display: flex; gap: 3px; align-items: flex-end;
+            height: 22px; opacity: 0; transition: opacity 0.2s; }
+    .bars.active { opacity: 1; }
+    .bars span {
+      display: block; width: 4px; background: #2ecc71; border-radius: 2px;
+      animation: bounce 0.28s ease-in-out infinite alternate;
+    }
+    .bars span:nth-child(1){ height:7px;  animation-delay:0s    }
+    .bars span:nth-child(2){ height:16px; animation-delay:0.05s }
+    .bars span:nth-child(3){ height:20px; animation-delay:0.1s  }
+    .bars span:nth-child(4){ height:12px; animation-delay:0.15s }
+    .bars span:nth-child(5){ height:18px; animation-delay:0.07s }
+    .bars span:nth-child(6){ height:9px;  animation-delay:0.12s }
+    @keyframes bounce {
+      from { transform: scaleY(0.35); } to { transform: scaleY(1); }
+    }
+
+    /* ---- HINT ---- */
+    .hint {
+      color: var(--hint); font-size: 12px; text-align: center;
+      max-width: 240px; line-height: 1.65; padding: 0 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="btn-wrap" id="btnWrap">
+    <div class="ring"></div>
+    <div class="ring ring-2"></div>
+    <button id="doorBtn" onclick="openDoor()">
+      <span class="icon">🚪</span>
+      <span class="label">Open Door</span>
+    </button>
+  </div>
+
+  <div id="status">
+    <span class="status-pill" id="pill">Sending DTMF 6…</span>
+  </div>
+
+  <div class="bars" id="bars">
+    <span></span><span></span><span></span>
+    <span></span><span></span><span></span>
+  </div>
+
+  <div class="hint">
+    Press during a CyberGate call to send tone&nbsp;6 and unlock the door.
+  </div>
+
+  <script>
+    // ── Teams SDK init ──────────────────────────────────────────────
+    let teamsCtx = null;
+    try {
+      microsoftTeams.app.initialize().then(() => {
+        microsoftTeams.app.getContext().then(ctx => {
+          teamsCtx = ctx;
+          // Apply Teams theme
+          applyTheme(ctx.app?.theme || 'dark');
+        });
+        microsoftTeams.app.registerOnThemeChangeHandler(applyTheme);
+      }).catch(() => {});
+    } catch(e) {}
+
+    function applyTheme(theme) {
+      document.body.classList.remove('teams-dark','teams-light','teams-hc');
+      if (theme === 'default') document.body.classList.add('teams-light');
+      else if (theme === 'contrast') document.body.classList.add('teams-hc');
+      else document.body.classList.add('teams-dark');
+    }
+
+    // ── Audio ───────────────────────────────────────────────────────
+    let audioCtx = null;
+    let busy = false;
+
+    function getCtx() {
+      if (!audioCtx || audioCtx.state === 'closed')
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return audioCtx;
+    }
+
+    // DTMF 6 = 770 Hz (row 2) + 1477 Hz (col 3)
+    function playDTMF(durationMs = 800) {
+      const ctx = getCtx();
+      const gain = ctx.createGain();
+      const now = ctx.currentTime;
+      const dur = durationMs / 1000;
+
+      // Smooth ramp to avoid click artefacts
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(1.0, now + 0.02);
+      gain.gain.setValueAtTime(1.0, now + dur - 0.04);
+      gain.gain.linearRampToValueAtTime(0, now + dur);
+      gain.connect(ctx.destination);
+
+      [770, 1477].forEach(f => {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = f;
+        osc.connect(gain);
+        osc.start(now);
+        osc.stop(now + dur + 0.05);
+      });
+
+      return new Promise(r => setTimeout(r, durationMs + 80));
+    }
+
+    // ── Main action ─────────────────────────────────────────────────
+    async function openDoor() {
+      if (busy) return;
+      busy = true;
+
+      const wrap = document.getElementById('btnWrap');
+      const pill = document.getElementById('pill');
+      const bars = document.getElementById('bars');
+
+      wrap.classList.add('firing');
+      bars.classList.add('active');
+      pill.textContent = 'Sending DTMF 6…';
+      pill.className = 'status-pill show sending';
+
+      await playDTMF(800);
+
+      wrap.classList.remove('firing');
+      bars.classList.remove('active');
+      pill.textContent = '✓ Tone sent — door unlocking';
+      pill.className = 'status-pill show done';
+
+      setTimeout(() => {
+        pill.className = 'status-pill';
+        busy = false;
+      }, 2500);
+    }
+
+    // Warm up AudioContext on first touch (required by mobile browsers)
+    document.getElementById('doorBtn')
+      .addEventListener('touchstart', () => { if (!audioCtx) getCtx(); }, { passive: true });
+  </script>
+</body>
+</html>
